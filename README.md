@@ -15,3 +15,17 @@ To improve the baseline multimodal model, I am following a structured three-phas
 ### Phase 3: Temporal & Global Evaluation
 1. **Frame-Aware Matching (Experiment 2):** Testing frame-specific ROI alignment against global context matching to evaluate improvements in temporal reasoning ("who did what when").
 2. **Final Analysis:** Generating similarity heatmaps and retrieval metrics to provide evidence of improved multimodal grounding.
+
+## Implementation Progress
+
+### Component 1: Grounding Module
+**Task:** Extraction of Grounding Information from Chain-of-Thought (CoT).
+Since the `daniel3303/StoryReasoning` dataset stores grounding information (bounding boxes) within the `chain_of_thought` markdown string, I implemented a custom parser.
+**Technical Specification: Coordinate System:** Through empirical testing, I verified that the Bounding Box values in the CoT (e.g., 318, 48...) do not represent absolute pixels but are scaled to a **1000x1000 unit grid**. 
+- **Image Resolution:** 575x240 px (ie)
+- **Coordinate Range:** 0-1000
+- **Normalization Strategy:** All coordinates are divided by 1000.0 to obtain relative values [0, 1], ensuring compatibility regardless of the input frame resolution.
+
+- **Parser Logic:** Uses Regular Expressions (Regex) to scan the CoT for image sections (`## Image X`) and extract coordinates from markdown tables.
+- **Normalization:** Coordinates are converted from the dataset's 1000x1000 scale to a normalized [0, 1] range compatible with PyTorch/Torchvision.
+- **Verification:** Successfully extracted regions for characters (e.g., 'James') and background objects to be used for the ROI-alignment.
