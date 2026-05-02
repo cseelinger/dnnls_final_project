@@ -44,3 +44,25 @@ I have successfully closed the data loop between the raw Chain-of-Thought (CoT) 
 - **DataLoader Update:** Synchronized the `DataLoader` to output a 10-element batch tuple, including the new `context_rois_tensor`.
 - **Loop Synchronization:** Updated both the **Main Training Loop** and the **Validation Routine** to handle the expanded data structure.
 - **Verification:** Successfully verified the integrity of the visual crops through sanity check visualizations, ensuring the model "sees" the correct entities (e.g., characters or objects) before starting the training.
+
+**Status: Phase 2 in Progress (Experimental Stage)**
+While Phase 1 (Data Infrastructure) is fully completed, I am currently executing Phase 2. I have successfully established the baseline comparison between different grounding objectives.
+
+- **Current Activity:** Running extended 100-epoch training sessions to evaluate long-term convergence of the MSE-based grounding signal.
+- **Data Integrity:** All training logs are being systematically exported to `.csv` files to ensure reproducibility and to prevent data loss from session disconnects.
+
+### Preliminary Results & Observations (Experiment 1)
+Initial controlled runs of 20 epochs have provided the following insights:
+
+| Metric | InfoNCE (Contrastive) | MSE (Regression) | Observation |
+| :--- | :--- | :--- | :--- |
+| **Convergence** | Slower / Static | **Rapid / Dynamic** | MSE shows a stronger initial gradient for ROI alignment. |
+| **Grounding MSE** | Near zero (Low variance) | **Decreasing (High activity)** | The model actively learns spatial features under MSE. |
+| **Text Loss** | ~2.84 | **~3.15** | Both objectives support context-aware text generation. |
+
+**Hypothesis Refinement:** Contrary to the initial hypothesis, MSE appears more effective for the current batch size constraints. InfoNCE likely requires larger batches (more negatives) or longer training duration to restructure the latent space effectively.
+
+### Explainability & Evaluation Strategy
+To validate the "grounded" nature of the predictions, I am implementing:
+- **Similarity Heatmaps:** Visualizing the cosine similarity between the text encoder's output and the ROI embeddings to prove the model "attends" to the correct entities when generating names like "James" or "Victor".
+- **Temporal Consistency Check:** Comparing Frame-Aware vs. Global matching to measure the reduction in "object drifting" during sequence prediction.
