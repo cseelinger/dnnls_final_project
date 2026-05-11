@@ -45,8 +45,8 @@ I have successfully closed the data loop between the raw Chain-of-Thought (CoT) 
 - **Loop Synchronization:** Updated both the **Main Training Loop** and the **Validation Routine** to handle the expanded data structure.
 - **Verification:** Successfully verified the integrity of the visual crops through sanity check visualizations, ensuring the model "sees" the correct entities (e.g., characters or objects) before starting the training.
 
-**Status: Phase 2 in Progress (Experimental Stage)**
-While Phase 1 (Data Infrastructure) is fully completed, I am currently executing Phase 2. I have successfully established the baseline comparison between different grounding objectives.
+**Status: Phase 2 & 3 Completed (Final Evaluation)**
+The experimental phase is concluded. Both the loss ablation (Experiment 1) and the temporal awareness study (Experiment 2) have been successfully executed and documented.
 
 - **Current Activity:** Running extended 100-epoch training sessions to evaluate long-term convergence of the MSE-based grounding signal.
 - **Data Integrity:** All training logs are being systematically exported to `.csv` files to ensure reproducibility and to prevent data loss from session disconnects.
@@ -62,7 +62,15 @@ Initial controlled runs of 20 epochs have provided the following insights:
 
 **Hypothesis Refinement:** Contrary to the initial hypothesis, MSE appears more effective for the current batch size constraints. InfoNCE likely requires larger batches (more negatives) or longer training duration to restructure the latent space effectively.
 
-### Explainability & Evaluation Strategy
-To validate the "grounded" nature of the predictions, I am implementing:
-- **Similarity Heatmaps:** Visualizing the cosine similarity between the text encoder's output and the ROI embeddings to prove the model "attends" to the correct entities when generating names like "James" or "Victor".
-- **Temporal Consistency Check:** Comparing Frame-Aware vs. Global matching to measure the reduction in "object drifting" during sequence prediction.
+### Final Results & Findings: Experiment 2 (Temporal Awareness)
+I conducted a **Temporal Ablation Study** comparing frame-specific grounding versus global context matching.
+
+| Configuration | Grounding MSE | Text Loss Stability | Observation |
+| :--- | :--- | :--- | :--- |
+| **Frame-Aware (Temporal)** | Higher (~0.10) | **Stable / Low** | Superior story prediction through precise timing. |
+| **Global Matching (Baseline)** | **Lower (~0.02)** | High Variance | "Shortcut" learning; model fails to link actions to time. |
+
+**Key Insights:**
+- **Temporal Grounding Success:** Matching ROI $t$ to Text $t$ (Frame-Aware) forces the model to learn "who did what when," leading to more stable sequence predictions.
+- **Visual Synthesis Observations:** It was observed that the Image L1-Loss leads to "regression to the mean" (grey images). This confirms that semantic grounding (text-loss) is the more reliable metric for this architecture's reasoning capabilities.
+- **Data Preservation:** Training histories are preserved as `history_experiment2_global.csv` and `history_mse_experiment_recovered.csv`.
