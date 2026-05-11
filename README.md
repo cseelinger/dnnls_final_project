@@ -74,3 +74,8 @@ I conducted a **Temporal Ablation Study** comparing frame-specific grounding ver
 - **Temporal Grounding Success:** Matching ROI $t$ to Text $t$ (Frame-Aware) forces the model to learn "who did what when," leading to more stable sequence predictions.
 - **Visual Synthesis Observations:** It was observed that the Image L1-Loss leads to "regression to the mean" (grey images). This confirms that semantic grounding (text-loss) is the more reliable metric for this architecture's reasoning capabilities.
 - **Data Preservation:** Training histories are preserved as `history_experiment2_global.csv` and `history_mse_experiment_recovered.csv`.
+
+#### Evaluation & Diagnostic Tools
+To evaluate the success of the grounding module, I implemented two diagnostic tools:
+1. **Temporal Similarity Heatmaps:** Calculates the cosine similarity between ROI embeddings and text embeddings across the sequence to verify temporal alignment.
+2. **Visual Sanity Checks:** A dedicated pipeline component that visualizes the original frame alongside the extracted ROI to ensure coordinate-to-pixel transformation integrity.
