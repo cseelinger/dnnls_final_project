@@ -45,11 +45,9 @@ I have successfully closed the data loop between the raw Chain-of-Thought (CoT) 
 - **Loop Synchronization:** Updated both the **Main Training Loop** and the **Validation Routine** to handle the expanded data structure.
 - **Verification:** Successfully verified the integrity of the visual crops through sanity check visualizations, ensuring the model "sees" the correct entities (e.g., characters or objects) before starting the training.
 
-**Status: Phase 2 & 3 Completed (Final Evaluation)**
-The experimental phase is concluded. Both the loss ablation (Experiment 1) and the temporal awareness study (Experiment 2) have been successfully executed and documented.
-
-- **Current Activity:** Running extended 100-epoch training sessions to evaluate long-term convergence of the MSE-based grounding signal.
-- **Data Integrity:** All training logs are being systematically exported to `.csv` files to ensure reproducibility and to prevent data loss from session disconnects.
+**Project Status:**
+- **Phase 1-3:** Completed (Data parsing, ROI integration, and initial baseline experiments).
+- **Phase 4 (Breakthrough):** Completed. The "vertical streak" issue in heatmaps was resolved by correcting the coordinate scaling logic and switching from generative (MSE) to contrastive learning (InfoNCE). Temporal synchronization is now verified.
 
 ### Preliminary Results & Observations (Experiment 1)
 Initial controlled runs of 20 epochs have provided the following insights:
@@ -87,3 +85,27 @@ During final validation, a detailed sanity check revealed a synchronization mism
 - **Vertical Heatmap Streaks:** The observed vertical patterns in the similarity heatmaps are a direct result of this mismatch. Since the visual ROI features did not consistently correlate with the temporal text context, the model optimization prioritized **"Semantic Dominance"**.
 - **Model Adaptation:** The network learned to rely almost exclusively on the robust text embeddings for sequence prediction, effectively treating the mismatched visual ROIs as secondary noise. 
 - **Scientific Conclusion:** This confirms that the multimodal architecture is resilient enough to maintain stable text losses even with noisy visual grounding, though the desired diagonal temporal alignment requires a precise frame-to-box index synchronization.
+
+## Phase 4: Optimization & Breakthrough (The "Diagonal" Milestone)
+
+After concluding Phase 3, a critical discrepancy was observed: despite decreasing loss values, the similarity heatmaps showed vertical artifacts instead of the expected diagonal. The following optimizations led to the final breakthrough:
+
+### 1. ROI Synchronization Fix (Coordinate Calibration)
+Systematic visual sanity checks revealed a fundamental mismatch in the bounding box interpretation.
+- **Problem:** Crops were stuck in the upper-left corner because the format was misinterpreted as `[x1, y1, x2, y2]`.
+- **Solution:** The format was identified as `[x, y, width, height]` on a normalized 1000-unit grid. The pixel transformation was corrected to:
+  `pixel_bbox = [x*W, y*H, (x+w)*W, (y+h)*H]`
+- **Result:** The ROI crops now precisely capture character faces and entities instead of background noise.
+
+### 2. Loss Ablation: MSE vs. InfoNCE
+The most significant breakthrough came from switching the grounding objective:
+
+| Objective | Heatmap Pattern | Conclusion |
+| :--- | :--- | :--- |
+| **MSE (Regression)** | Vertical Streaks | Model learns "average" features; lacks temporal discrimination. |
+| **InfoNCE (Contrastive)** | **Clear Diagonal** | Contrastive learning forces the model to distinguish between time steps. |
+
+
+
+### 3. Summary of Findings
+The combination of **[x,y,w,h] parsing** and **InfoNCE loss** successfully established a 1-to-1 temporal mapping. The final similarity heatmaps display a sharp diagonal, proving that the model has learned to link specific text tokens to their corresponding image regions at the correct point in time.
