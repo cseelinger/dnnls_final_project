@@ -78,7 +78,7 @@ To evaluate the success of the grounding module, I implemented two diagnostic to
 1. **Temporal Similarity Heatmaps:** Calculates the cosine similarity between ROI embeddings and text embeddings across the sequence to verify temporal alignment.
 2. **Visual Sanity Checks:** A dedicated pipeline component that visualizes the original frame alongside the extracted ROI to ensure coordinate-to-pixel transformation integrity.
 
-### Technical Post-Mortem: ROI Synchronization & Heatmap Analysis
+### Technical Optimization: ROI Synchronization & Heatmap Analysis
 During final validation, a detailed sanity check revealed a synchronization mismatch in the data pipeline. While the ROI extraction technically delivers valid visual crops, a temporal offset was identified between the visual frames and their corresponding bounding box assignments.
 
 **Impact on Semantic Grounding:**
