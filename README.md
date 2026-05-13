@@ -1,7 +1,7 @@
 # dnnls_final_project
 
 ## Project Roadmap & Execution Plan
-To improve the baseline multimodal model, I am following a structured three-phase approach focusing on Visual Grounding and Temporal Awareness.
+To extend the baseline multimodal model, I followed a structured approach focusing on visual grounding and temporal ROI-text alignment.
 
 ### Phase 1: Grounding Module Enhancement
 1. **Data Parsing:** Extracting entity-level bounding boxes from the chain_of_thought markdown tables using Regex.
@@ -13,8 +13,8 @@ To improve the baseline multimodal model, I am following a structured three-phas
 2. **Loss Ablation:** Comparing the performance of InfoNCE vs. MSE-based alignment to determine the most effective grounding signal.
 
 ### Phase 3: Temporal & Global Evaluation
-1. **Frame-Aware Matching (Experiment 2):** Testing frame-specific ROI alignment against global context matching to evaluate improvements in temporal reasoning ("who did what when").
-2. **Final Analysis:** Generating similarity heatmaps and retrieval metrics to provide evidence of improved multimodal grounding.
+1. **Frame-Aware Matching (Experiment 2):** Testing frame-specific ROI alignment against global context matching to evaluate whether the model learns stronger temporal ROI-text correspondence.
+2. **Final Analysis:** Generating similarity heatmaps and diagnostic metrics to analyse whether the grounding module produces frame-dependent alignment patterns.
 
 ## Implementation Progress
 
@@ -29,7 +29,7 @@ Since the `daniel3303/StoryReasoning` dataset stores grounding information (boun
 
 - **Parser Logic:** Uses Regular Expressions (Regex) to scan the CoT for image sections (`## Image X`) and extract coordinates from markdown tables.
 - **Normalization:** Coordinates are converted from the dataset's 1000x1000 scale to a normalized [0, 1] range compatible with PyTorch/Torchvision.
-- **Verification:** Successfully extracted regions for characters (e.g., 'James') and background objects to be used for the ROI-alignment.
+- **Verification:** Successfully extracted local visual regions for characters and objects. The extracted ROIs were used as additional local visual context for ROI-text alignment.
 
 **Status:** Phase 1 Completed. Extraction and synchronization of Grounding Information.
 I have successfully closed the data loop between the raw Chain-of-Thought (CoT) text and the model's training pipeline.
@@ -43,69 +43,72 @@ I have successfully closed the data loop between the raw Chain-of-Thought (CoT) 
 - **ROI Extraction:** Integrated a `torchvision` cropping mechanism within the `__getitem__` method to provide the model with local visual features (crops of 60x125 px).
 - **DataLoader Update:** Synchronized the `DataLoader` to output a 10-element batch tuple, including the new `context_rois_tensor`.
 - **Loop Synchronization:** Updated both the **Main Training Loop** and the **Validation Routine** to handle the expanded data structure.
-- **Verification:** Successfully verified the integrity of the visual crops through sanity check visualizations, ensuring the model "sees" the correct entities (e.g., characters or objects) before starting the training.
+- **Verification:** Visual sanity checks were used to inspect the extracted crops. The crops provide meaningful local visual context, although the annotations remain noisy and do not always perfectly center on the intended character or object.
 
 **Project Status:**
-- **Phase 1-3:** Completed (Data parsing, ROI integration, and initial baseline experiments).
-- **Phase 4 (Breakthrough):** Completed. The "vertical streak" issue in heatmaps was resolved by correcting the coordinate scaling logic and switching from generative (MSE) to contrastive learning (InfoNCE). Temporal synchronization is now verified.
+- **Phase 1:** Completed. Chain-of-thought bounding boxes were parsed and converted into structured ROI annotations.
+- **Phase 2:** Completed. ROI crops were integrated into the data pipeline and encoded as local visual features.
+- **Phase 3:** Completed. MSE-based and InfoNCE-based ROI-text alignment objectives were compared using training curves and temporal similarity heatmaps.
+- **Final Evaluation:** The results show that MSE can produce low grounding losses without clear temporal discrimination, while InfoNCE produces a more differentiated ROI-text similarity structure. The improvement is partial rather than perfect and remains limited by noisy ROI annotations and the small-scale experimental setup.
 
-### Preliminary Results & Observations (Experiment 1)
-Initial controlled runs of 20 epochs have provided the following insights:
+### Results & Observations: Experiment 1 — MSE vs. InfoNCE Alignment
 
-| Metric | InfoNCE (Contrastive) | MSE (Regression) | Observation |
+Two 20-epoch runs were used to compare regression-based and contrastive ROI-text alignment.
+
+| Objective | Loss Behaviour | Heatmap Pattern | Interpretation |
 | :--- | :--- | :--- | :--- |
-| **Convergence** | Slower / Static | **Rapid / Dynamic** | MSE shows a stronger initial gradient for ROI alignment. |
-| **Grounding MSE** | Near zero (Low variance) | **Decreasing (High activity)** | The model actively learns spatial features under MSE. |
-| **Text Loss** | ~2.84 | **~3.15** | Both objectives support context-aware text generation. |
+| **MSE Alignment** | Low and decreasing grounding MSE | Strong vertical patterns | Low regression loss does not necessarily imply frame-specific temporal alignment. The model appears to learn averaged or shortcut-like embedding correspondences. |
+| **InfoNCE Alignment** | Higher and more variable contrastive loss | More differentiated similarity structure with partial diagonal behaviour | Contrastive learning provides a stronger discriminative signal by comparing correct ROI-text pairs against incorrect temporal pairs. |
 
-**Hypothesis Refinement:** Contrary to the initial hypothesis, MSE appears more effective for the current batch size constraints. InfoNCE likely requires larger batches (more negatives) or longer training duration to restructure the latent space effectively.
+**Key Observation:**  
+The MSE objective performs well numerically, but the similarity heatmap reveals limited temporal discrimination. InfoNCE produces a less collapsed similarity structure, suggesting that contrastive alignment is more suitable for encouraging frame-aware ROI-text correspondence.
 
-### Final Results & Findings: Experiment 2 (Temporal Awareness)
-I conducted a **Temporal Ablation Study** comparing frame-specific grounding versus global context matching.
+### Additional Findings: Experiment 2 — Frame-Aware vs. Global Matching
+I conducted a temporal ablation study comparing frame-specific ROI-text matching with global context matching.
 
-| Configuration | Grounding MSE | Text Loss Stability | Observation |
-| :--- | :--- | :--- | :--- |
-| **Frame-Aware (Temporal)** | Higher (~0.10) | **Stable / Low** | Superior story prediction through precise timing. |
-| **Global Matching (Baseline)** | **Lower (~0.02)** | High Variance | "Shortcut" learning; model fails to link actions to time. |
+| Configuration | Grounding Behaviour | Observation |
+| :--- | :--- | :--- |
+| **Frame-Aware Matching** | More difficult optimization | Encourages direct ROI-text correspondence at the same time step. |
+| **Global Matching** | Lower grounding error possible | Can lead to shortcut-like behaviour because each ROI is aligned with an averaged text context rather than a specific time step. |
 
 **Key Insights:**
-- **Temporal Grounding Success:** Matching ROI $t$ to Text $t$ (Frame-Aware) forces the model to learn "who did what when," leading to more stable sequence predictions.
-- **Visual Synthesis Observations:** It was observed that the Image L1-Loss leads to "regression to the mean" (grey images). This confirms that semantic grounding (text-loss) is the more reliable metric for this architecture's reasoning capabilities.
-- **Data Preservation:** Training histories are preserved as `history_experiment2_global.csv` and `history_mse_experiment_recovered.csv`.
+- **Frame-aware alignment:** Matching ROI $t$ to Text $t$ provides a stronger temporal training signal than aligning ROIs with a global averaged text context.
+- **Shortcut behaviour:** Global matching can achieve lower numerical grounding error while still providing weaker evidence of temporal discrimination.
+- **Visual synthesis limitation:** The generated images remain visually limited and tend toward averaged outputs. Therefore, similarity heatmaps and text-related losses are more informative diagnostic tools for this project than image quality alone.
+- **Data Preservation:** Training histories and diagnostic figures are preserved in the repository for reproducibility.
 
 #### Evaluation & Diagnostic Tools
 To evaluate the success of the grounding module, I implemented two diagnostic tools:
 1. **Temporal Similarity Heatmaps:** Calculates the cosine similarity between ROI embeddings and text embeddings across the sequence to verify temporal alignment.
 2. **Visual Sanity Checks:** A dedicated pipeline component that visualizes the original frame alongside the extracted ROI to ensure coordinate-to-pixel transformation integrity.
 
-### Technical Optimization: ROI Synchronization & Heatmap Analysis
-During final validation, a detailed sanity check revealed a synchronization mismatch in the data pipeline. While the ROI extraction technically delivers valid visual crops, a temporal offset was identified between the visual frames and their corresponding bounding box assignments.
+## Final Optimization & Diagnostic Analysis
+After the initial experiments, a discrepancy was observed: decreasing grounding losses did not necessarily correspond to meaningful temporal alignment in the similarity heatmaps. Therefore, additional diagnostic checks were used to inspect the ROI extraction pipeline and compare the behaviour of MSE and InfoNCE alignment.
 
-**Impact on Semantic Grounding:**
-- **Vertical Heatmap Streaks:** The observed vertical patterns in the similarity heatmaps are a direct result of this mismatch. Since the visual ROI features did not consistently correlate with the temporal text context, the model optimization prioritized **"Semantic Dominance"**.
-- **Model Adaptation:** The network learned to rely almost exclusively on the robust text embeddings for sequence prediction, effectively treating the mismatched visual ROIs as secondary noise. 
-- **Scientific Conclusion:** This confirms that the multimodal architecture is resilient enough to maintain stable text losses even with noisy visual grounding, though the desired diagonal temporal alignment requires a precise frame-to-box index synchronization.
+### 1. ROI Coordinate Calibration
+Systematic visual sanity checks showed that ROI quality strongly depends on the correct interpretation of the bounding box format.
 
-## Phase 4: Optimization & Breakthrough (The "Diagonal" Milestone)
-
-After concluding Phase 3, a critical discrepancy was observed: despite decreasing loss values, the similarity heatmaps showed vertical artifacts instead of the expected diagonal. The following optimizations led to the final breakthrough:
-
-### 1. ROI Synchronization Fix (Coordinate Calibration)
-Systematic visual sanity checks revealed a fundamental mismatch in the bounding box interpretation.
-- **Problem:** Crops were stuck in the upper-left corner because the format was misinterpreted as `[x1, y1, x2, y2]`.
-- **Solution:** The format was identified as `[x, y, width, height]` on a normalized 1000-unit grid. The pixel transformation was corrected to:
+- **Problem:** Early crops were often poorly positioned because the bounding box format was initially treated as `[x1, y1, x2, y2]`.
+- **Solution:** The stored box representation was handled as `[x, y, width, height]`, and the pixel-space crop was computed as:
   `pixel_bbox = [x*W, y*H, (x+w)*W, (y+h)*H]`
-- **Result:** The ROI crops now precisely capture character faces and entities instead of background noise.
+- **Result:** The corrected transformation produced more meaningful local crops. The annotations remain noisy and do not always perfectly center on character faces, but they provide stronger frame-specific visual context than the earlier crops.
 
 ### 2. Loss Ablation: MSE vs. InfoNCE
 The most significant breakthrough came from switching the grounding objective:
 
 | Objective | Heatmap Pattern | Conclusion |
 | :--- | :--- | :--- |
-| **MSE (Regression)** | Vertical Streaks | Model learns "average" features; lacks temporal discrimination. |
-| **InfoNCE (Contrastive)** | **Clear Diagonal** | Contrastive learning forces the model to distinguish between time steps. |
-
-
+| **MSE (Regression)** | Vertical streaks | The model achieves low regression error, but the alignment pattern suggests limited frame-specific discrimination. |
+| **InfoNCE (Contrastive)** | More differentiated structure with partial diagonal behaviour | Contrastive learning provides a stronger signal for distinguishing correct and incorrect temporal ROI-text pairs. |
 
 ### 3. Summary of Findings
-The combination of **[x,y,w,h] parsing** and **InfoNCE loss** successfully established a 1-to-1 temporal mapping. The final similarity heatmaps display a sharp diagonal, proving that the model has learned to link specific text tokens to their corresponding image regions at the correct point in time.
+The combination of corrected `[x, y, width, height]` parsing and InfoNCE-based alignment improved the temporal structure of the ROI-text similarity matrix. Compared with the MSE objective, the InfoNCE run shows a more differentiated pattern and partially stronger diagonal behaviour.
+
+This suggests that contrastive learning is better suited for frame-aware ROI-text alignment than pure embedding regression. However, the alignment is not perfect. The ROI annotations remain noisy, and the heatmap should be interpreted as evidence of improved temporal discrimination rather than proof of complete semantic grounding or identity-level recognition.
+
+## Limitations
+- The ROI annotations are noisy and do not always perfectly capture the intended character or object.
+- The experiments were conducted on a small-scale setup with limited training time and batch size.
+- Component losses are used mainly as diagnostic indicators; the similarity heatmaps provide the main evidence for temporal alignment behaviour.
+- The InfoNCE-based alignment improves temporal discrimination compared with MSE, but it does not fully solve grounded story understanding.
+- Image generation quality remains limited, so the evaluation focuses primarily on embedding alignment and temporal ROI-text correspondence.
