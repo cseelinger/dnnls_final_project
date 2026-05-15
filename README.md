@@ -9,7 +9,7 @@ To extend the baseline multimodal model, I followed a structured approach focusi
 3. **Architecture Update:** Injecting ROI embeddings into the sequence predictor to align text tokens with specific image regions.
 
 ### Phase 2: Implementation of Training Objectives
-1. **Contrastive Alignment (Experiment 1):** Implementing an InfoNCE Loss to minimize the distance between ROI embeddings and their corresponding text descriptions in the joint embedding space.
+1. **Contrastive Alignment (Experiment 1):** Implementing an InfoNCE loss to increase the relative similarity of matching ROI-text pairs compared with incorrect temporal pairs.
 2. **Loss Ablation:** Comparing the performance of InfoNCE vs. MSE-based alignment to determine the most effective grounding signal.
 
 ### Phase 3: Temporal & Global Evaluation
@@ -22,25 +22,25 @@ To extend the baseline multimodal model, I followed a structured approach focusi
 
 **Task:** Extraction of Grounding Information from Chain-of-Thought (CoT).
 Since the `daniel3303/StoryReasoning` dataset stores grounding information (bounding boxes) within the `chain_of_thought` markdown string, I implemented a custom parser.
-**Technical Specification: Coordinate System:** Through empirical testing, I verified that the Bounding Box values in the CoT (e.g., 318, 48...) do not represent absolute pixels but are scaled to a **1000x1000 unit grid**. 
-- **Image Resolution:** 575x240 px (e.g.)
-- **Coordinate Range:** 0-1000
-- **Normalization Strategy:** All coordinates are divided by 1000.0 to obtain relative values [0, 1], ensuring compatibility regardless of the input frame resolution.
+**Technical Specification: Coordinate System:**  
+Through visual sanity checks, I verified that the CoT bounding box values match the original frame resolution and should be treated as direct pixel coordinates in `[x1, y1, x2, y2]` format.
 
-- **Parser Logic:** Uses Regular Expressions (Regex) to scan the CoT for image sections (`## Image X`) and extract coordinates from markdown tables.
-- **Normalization:** Coordinates are converted from the dataset's 1000x1000 scale to a normalized [0, 1] range compatible with PyTorch/Torchvision.
-- **Verification:** Successfully extracted local visual regions for characters and objects. The extracted ROIs were used as additional local visual context for ROI-text alignment.
+- **Image Resolution:** approximately 575x240 px, depending on the sample.
+- **Coordinate Format:** direct pixel coordinates `[x1, y1, x2, y2]`.
+- **Parser Logic:** Regular Expressions are used to scan the CoT for image sections (`## Image X`) and extract coordinates from markdown tables.
+- **ROI Extraction:** The extracted pixel coordinates are passed directly to the cropping function without normalization or scaling by image width/height.
+- **Verification:** Visual sanity checks confirmed that the extracted boxes align with meaningful local image regions such as characters, faces, body parts, and relevant objects.
 
 **Status:** Phase 1 Completed. Extraction and synchronization of Grounding Information.
 I have successfully closed the data loop between the raw Chain-of-Thought (CoT) text and the model's training pipeline.
 
-#### 1. Data Parsing & Normalization
+#### 1. Data Parsing & Coordinate Handling
 - **Regex Extraction:** Implemented a custom parser to extract entity-level bounding boxes from markdown tables within the `chain_of_thought` field.
-- **Coordinate Scaling:** Verified that the dataset uses a **1000x1000 unit grid**. Developed a dynamic denormalization strategy that converts these values into absolute pixels based on the specific frame resolution (e.g., 575x240 px).
+- **Coordinate Handling:** Visual inspection showed that the raw CoT values already correspond to pixel coordinates in `[x1, y1, x2, y2]` format. Therefore, the parser stores the extracted coordinates directly without dividing them by 1000 or normalizing them to `[0, 1]`.
 - **Persistent Mapping:** Applied the parser to the entire dataset via `.map()`, creating a structured `parsed_boxes` column for efficient access.
 
 #### 2. ROI Integration & Pipeline Sync
-- **ROI Extraction:** Integrated a `torchvision` cropping mechanism within the `__getitem__` method to provide the model with local visual features (crops of 60x125 px).
+- **ROI Extraction:** Integrated a cropping mechanism within the `__getitem__` method. The final implementation uses raw CoT pixel boxes in `[x1, y1, x2, y2]` format and resizes the extracted ROIs to 60x125 px.
 - **DataLoader Update:** Synchronized the `DataLoader` to output a 10-element batch tuple, including the new `context_rois_tensor`.
 - **Loop Synchronization:** Updated both the **Main Training Loop** and the **Validation Routine** to handle the expanded data structure.
 - **Verification:** Visual sanity checks were used to inspect the extracted crops. The crops provide meaningful local visual context, although the annotations remain noisy and do not always perfectly center on the intended character or object.
@@ -48,8 +48,9 @@ I have successfully closed the data loop between the raw Chain-of-Thought (CoT) 
 **Project Status:**
 - **Phase 1:** Completed. Chain-of-thought bounding boxes were parsed and converted into structured ROI annotations.
 - **Phase 2:** Completed. ROI crops were integrated into the data pipeline and encoded as local visual features.
-- **Phase 3:** Completed. MSE-based and InfoNCE-based ROI-text alignment objectives were compared using training curves and temporal similarity heatmaps.
-- **Final Evaluation:** The results show that MSE can produce low grounding losses without clear temporal discrimination, while InfoNCE produces a more differentiated ROI-text similarity structure. The improvement is partial rather than perfect and remains limited by noisy ROI annotations and the small-scale experimental setup.
+- **Phase 3:** Completed in an initial version. MSE-based, InfoNCE-based, no-alignment, and global-matching configurations were implemented and evaluated using training curves and temporal similarity heatmaps.
+- **ROI Coordinate Fix:** Completed. Visual sanity checks showed that the CoT boxes should be treated as direct pixel coordinates `[x1, y1, x2, y2]`, not as normalized 1000-grid coordinates. The ROI extraction pipeline was corrected accordingly.
+- **Next Step:** The final experiments are re-run with the corrected ROI extraction to ensure that all reported results are based on verified local visual crops.
 
 ### Results & Observations: Experiment 1 — MSE vs. InfoNCE Alignment
 
@@ -79,7 +80,7 @@ I conducted a temporal ablation study comparing frame-specific ROI-text matching
 
 #### Evaluation & Diagnostic Tools
 To evaluate the success of the grounding module, I implemented two diagnostic tools:
-1. **Temporal Similarity Heatmaps:** Calculates the cosine similarity between ROI embeddings and text embeddings across the sequence to verify temporal alignment.
+1. **Temporal Similarity Heatmaps:** Calculates the cosine similarity between ROI embeddings and text embeddings across the sequence to diagnose temporal alignment behaviour.
 2. **Visual Sanity Checks:** A dedicated pipeline component that visualizes the original frame alongside the extracted ROI to ensure coordinate-to-pixel transformation integrity.
 
 ## Final Optimization & Diagnostic Analysis
@@ -88,10 +89,10 @@ After the initial experiments, a discrepancy was observed: decreasing grounding 
 ### 1. ROI Coordinate Calibration
 Systematic visual sanity checks showed that ROI quality strongly depends on the correct interpretation of the bounding box format.
 
-- **Problem:** Early crops were often poorly positioned because the bounding box format was initially treated as `[x1, y1, x2, y2]`.
-- **Solution:** The stored box representation was handled as `[x, y, width, height]`, and the pixel-space crop was computed as:
-  `pixel_bbox = [x*W, y*H, (x+w)*W, (y+h)*H]`
-- **Result:** The corrected transformation produced more meaningful local crops. The annotations remain noisy and do not always perfectly center on character faces, but they provide stronger frame-specific visual context than the earlier crops.
+- **Problem:** The CoT coordinate format was not explicitly documented. Early implementations tested normalized coordinate interpretations, which produced unreliable or poorly positioned crops.
+- **Solution:** The raw CoT values were inspected against the original frames. Since the values matched the image resolution, the final implementation treats them as direct pixel coordinates in `[x1, y1, x2, y2]` format:
+  `pixel_bbox = [x1, y1, x2, y2]`
+- **Result:** The corrected transformation produces meaningful local crops that align with the visual sanity checks. The annotations remain noisy and sometimes cover large image regions, but the ROIs now provide more reliable frame-specific visual context.
 
 ### 2. Loss Ablation: MSE vs. InfoNCE
 The most significant breakthrough came from switching the grounding objective:
@@ -101,14 +102,17 @@ The most significant breakthrough came from switching the grounding objective:
 | **MSE (Regression)** | Vertical streaks | The model achieves low regression error, but the alignment pattern suggests limited frame-specific discrimination. |
 | **InfoNCE (Contrastive)** | More differentiated structure with partial diagonal behaviour | Contrastive learning provides a stronger signal for distinguishing correct and incorrect temporal ROI-text pairs. |
 
-### 3. Summary of Findings
-The combination of corrected `[x, y, width, height]` parsing and InfoNCE-based alignment improved the temporal structure of the ROI-text similarity matrix. Compared with the MSE objective, the InfoNCE run shows a more differentiated pattern and partially stronger diagonal behaviour.
+### 3. Current Findings and Next Step
+The initial experiments showed that numerical grounding losses alone are not sufficient to evaluate temporal grounding. Similarity heatmaps are necessary to inspect whether the model actually learns frame-specific ROI-text correspondence.
 
-This suggests that contrastive learning is better suited for frame-aware ROI-text alignment than pure embedding regression. However, the alignment is not perfect. The ROI annotations remain noisy, and the heatmap should be interpreted as evidence of improved temporal discrimination rather than proof of complete semantic grounding or identity-level recognition.
+During final validation, the ROI coordinate interpretation was corrected to direct pixel coordinates `[x1, y1, x2, y2]`. Therefore, the final no-alignment, MSE, InfoNCE, and global-matching experiments are re-run with the verified ROI extraction pipeline before drawing the final conclusions.
+
+The expected analysis remains the same: MSE and global matching are evaluated for shortcut-like behaviour, while InfoNCE is evaluated for whether it produces a more differentiated temporal ROI-text similarity structure.
 
 ## Limitations
-- The ROI annotations are noisy and do not always perfectly capture the intended character or object.
+- The ROI annotations are noisy, and some boxes cover large image regions rather than small, precise character or object areas.
 - The experiments were conducted on a small-scale setup with limited training time and batch size.
 - Component losses are used mainly as diagnostic indicators; the similarity heatmaps provide the main evidence for temporal alignment behaviour.
 - The InfoNCE-based alignment improves temporal discrimination compared with MSE, but it does not fully solve grounded story understanding.
 - Image generation quality remains limited, so the evaluation focuses primarily on embedding alignment and temporal ROI-text correspondence.
+- The CoT coordinate format was not explicitly documented and required empirical verification through visual sanity checks.

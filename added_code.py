@@ -6,24 +6,21 @@ import re
 def extract_boxes_from_cot(cot_text):
     """
     Extracts all bounding boxes per frame from the chain-of-thought text.
-    Output: Dictionary {frame_idx: [[y1, x1, y2, x2], ...]}
+    Output: Dictionary {frame_idx: [[x1, y1, x2, y2], ...]}
+
+    The raw CoT boxes are treated as direct pixel coordinates.
     """
-    # 1. Subdivide text into section per picture
     image_sections = re.split(r'## Image \d+', cot_text)[1:]
 
     all_frame_boxes = {}
 
     for i, section in enumerate(image_sections):
-        # 2. Search for sequence of numbers in the last column of the table | 318,48,345,135 |
-        # Searching for numbers, seperated by commas, within pipes
         box_matches = re.findall(r'\|\s*([\d,]+)\s*\|', section)
 
         parsed_boxes = []
         for match in box_matches:
-            coords = [float(c) for c in match.split(',')]
+            coords = [int(c.strip()) for c in match.split(',')]
             if len(coords) == 4:
-                # Normalize from 0-1000 to 0.0-1.0
-                coords = [c / 1000.0 for c in coords]
                 parsed_boxes.append(coords)
 
         all_frame_boxes[i] = parsed_boxes
@@ -36,7 +33,7 @@ def add_parsed_boxes(example):
     boxes_dict = extract_boxes_from_cot(example['chain_of_thought'])
 
     # Create a list of Box-Lists (one list per frame)
-    # Example: [ [[y1,x1,y2,x2], [y1,x1,y2,x2]], [], [[...]] ]
+    # Example: [ [[x1,y1,x2,y2], [x1,y1,x2,y2]], [], [[...]] ]
     parsed_boxes = []
     for i in range(example['frame_count']):
         parsed_boxes.append(boxes_dict.get(i, []))
@@ -50,7 +47,6 @@ train_dataset = train_dataset.map(add_parsed_boxes)
 test_dataset = test_dataset.map(add_parsed_boxes)
 print("Finished! Example 'parsed_boxes':", train_dataset[0]['parsed_boxes'][0])
 
-
 # [11] SequencePredictionDataset
 
 # @title Main dataset
@@ -59,8 +55,8 @@ Defines the `SequencePredictionDataset` class, which is the core data provider f
 1. `__getitem__`:
    - Loads 5 frames (4 context + 1 target).
    - Parses text descriptions and optionally appends CoT text.
-   - Extracts bounding box crops (ROIs) for grounding tasks if CoT data is available.
-   - Returns a tuple containing: sequence images, descriptions, target image, target text, ROI crops, and validity flags.
+   - Extracts frame-specific ROI crops from parsed CoT bounding boxes.
+   - Returns the global frame sequence, text descriptions, prediction targets, and local ROI crops for ROI-text alignment.
 """
 class SequencePredictionDataset(Dataset):
     def __init__(self, original_dataset, tokenizer, K: int = 4, max_len: int = 120, image_hw=(60, 125)):
@@ -144,39 +140,37 @@ class SequencePredictionDataset(Dataset):
 
         # 5. --- GROUNDING MODULE: Extract context ROIs ---
         all_context_rois = []
+        parsed_boxes = item.get('parsed_boxes', [[] for _ in range(self.K)])
+
         for f_idx in range(self.K):
-            frame_boxes = item.get('parsed_boxes', [[] for _ in range(self.K)])[f_idx]
+            frame_boxes = parsed_boxes[f_idx]
 
             if len(frame_boxes) > 0:
-                ny1, nx1, ny2, nx2 = frame_boxes[0] # normalized coordinates
-                W, H = frames[f_idx].size
-                # calculate pixel coordinates for PIL (x1, y1, x2, y2)
-                pixel_bbox = [nx1 * W, ny1 * H, nx2 * W, ny2 * H]
-                roi = crop_and_resize(frames[f_idx], pixel_bbox, out_hw=self.image_hw)
+                # Final interpretation:
+                # CoT boxes are direct pixel coordinates [x1, y1, x2, y2]
+                x1, y1, x2, y2 = frame_boxes[0]
+
+                pixel_bbox = [x1, y1, x2, y2]
+
+                roi = crop_and_resize(
+                    frames[f_idx],
+                    pixel_bbox,
+                    out_hw=self.image_hw
+                )
             else:
                 roi = torch.zeros((3, self.image_hw[0], self.image_hw[1]))
+
             all_context_rois.append(roi)
 
         context_rois_tensor = torch.stack(all_context_rois)
 
-        # 6. --- Template ROI Pair (for ReID) ---
+        # 6. --- Legacy return values kept for DataLoader compatibility ---
+        # These values are not used in the final MSE vs. InfoNCE experiments.
         roi_valid = torch.tensor(0, dtype=torch.long)
         roi1 = torch.zeros((3, self.image_hw[0], self.image_hw[1]))
         roi2 = torch.zeros((3, self.image_hw[0], self.image_hw[1]))
         roi_frame = torch.tensor(-1, dtype=torch.long)
         ent_id = ""
-
-        pair = pick_reid_pair(cot_frames)
-        if pair is not None:
-            f1, f2, b1, b2, ent_id = pair
-            if (0 <= f1 < self.K) and (0 <= f2 < self.K):
-                try:
-                    roi1 = crop_and_resize(frames[f1], b1, out_hw=self.image_hw)
-                    roi2 = crop_and_resize(frames[f2], b2, out_hw=self.image_hw)
-                    roi_valid = torch.tensor(1, dtype=torch.long)
-                    roi_frame = torch.tensor(int(f1), dtype=torch.long)
-                except Exception:
-                    pass
 
         # 7. convert everything in tensors
         sequence_tensor = torch.stack(frame_tensors)
@@ -191,7 +185,6 @@ class SequencePredictionDataset(Dataset):
             context_rois_tensor, # <--- DEIN NEUES FEATURE (Pos 5)
             roi1, roi2, roi_valid, roi_frame, ent_id
         )
-
 # -----------------------------------------
 # 1.3 Creating and testing our dataset objects and loaders
 # [17]
@@ -234,10 +227,7 @@ plt.show()
 class SequencePredictor(nn.Module):
     # ...
 
-    def forward(self, image_seq, text_seq, target_seq, context_rois=None):
-        # ...
-
-        # --- ROI ENCODING ---
+    # --- ROI ENCODING ---
         z_roi_seq = None
         if context_rois is not None:
             # Same trick like above: Flatten for Encoder
@@ -269,7 +259,7 @@ class SequencePredictor(nn.Module):
         return pred_image_content, pred_image_context, predicted_text_logits_k, h0, c0, z_v_seq, z_t_seq_final, z_roi_seq
 
 # ----------------------------
-# 3.2 Training Loops
+# 3.3 Training Loops
 # [30]
 
 # @title Training loop for the sequence predictor
@@ -290,10 +280,10 @@ The main training loop:
 # Instantiate the model, define loss and optimizer
 
 # --- CoT-loss weights ---
-LAMBDA_REID = 0.10            # pulls same-entity ROIs together (student idea)
+LAMBDA_REID = 0.00            # pulls same-entity ROIs together (student idea)
 LAMBDA_GROUND_MSE = 0.10      # Option 2: frame-aware ROI↔text MSE grounding
-LAMBDA_CONTRAST = 0.10        # Option 1: contrastive ROI↔text grounding (InfoNCE)
-LAMBDA_ENTITY_POOL = 0.05     # Option 3: within-batch entity pooling loss
+LAMBDA_CONTRAST = 0.00        # Option 1: contrastive ROI↔text grounding (InfoNCE)
+LAMBDA_ENTITY_POOL = 0.00     # Option 3: within-batch entity pooling loss
 
 sequence_predictor.train()
 losses = []
@@ -344,31 +334,31 @@ for epoch in range(N_EPOCHS):
         loss_text = criterion_text(prediction_flat, target_flat)
 
         # -------------------------
-        # CoT Grounding Losses (Optimiert)
+        # CoT Grounding Losses
         # -------------------------
-        loss_reid = torch.tensor(0.0, device=device)
         loss_ground_mse = torch.tensor(0.0, device=device)
         loss_contrast = torch.tensor(0.0, device=device)
 
-        # A) NEW SEQUENCE-LOSS (Experiment 1)
-        # Compare z_roi_seq [B, K, D] with z_t_seq [B, K, D]
         if z_roi_seq is not None:
+            # Choose alignment target:
+            # frame-aware: ROI_t ↔ Text_t
+            # global: ROI_t ↔ mean(Text_1 ... Text_K)
             if USE_GLOBAL_MATCHING:
-                # GLOBAL: Mean the text over the time
-                global_z_t = z_t_seq.mean(dim=1, keepdim=True).expand_as(z_t_seq)
-                loss_ground_mse = F.mse_loss(z_roi_seq, global_z_t)
+                z_txt_for_alignment = z_t_seq.mean(dim=1, keepdim=True).expand_as(z_t_seq)
             else:
-                # FRAME-AWARE: Standard (ROI_t matches Text_t)
-                loss_ground_mse = F.mse_loss(z_roi_seq, z_t_seq)
+                z_txt_for_alignment = z_t_seq
 
-            # InfoNCE set to 0 (for clear MSE-comparison)
-            loss_contrast = torch.tensor(0.0, device=device)
+            # MSE grounding objective
+            if LAMBDA_GROUND_MSE > 0:
+                loss_ground_mse = F.mse_loss(z_roi_seq, z_txt_for_alignment)
 
-            # Contrastive Grounding (InfoNCE)
-            if USE_CONTRASTIVE_ROI:
-                # flattening batch and time for Contrastive Learning
+            # InfoNCE grounding objective
+            if USE_CONTRASTIVE_ROI and LAMBDA_CONTRAST > 0:
                 z_img = F.normalize(z_roi_seq.reshape(-1, z_roi_seq.size(-1)), dim=-1)
-                z_txt = F.normalize(z_t_seq.reshape(-1, z_t_seq.size(-1)), dim=-1)
+                z_txt = F.normalize(
+                    z_txt_for_alignment.reshape(-1, z_txt_for_alignment.size(-1)),
+                    dim=-1
+                )
 
                 logits = (z_img @ z_txt.t()) / CONTRASTIVE_TAU
                 labels = torch.arange(logits.size(0), device=device)
@@ -378,7 +368,6 @@ for epoch in range(N_EPOCHS):
         # Total Loss & Update
         # -------------------------
         loss = loss_im + loss_context + loss_text
-        loss += LAMBDA_REID * loss_reid
         loss += LAMBDA_GROUND_MSE * loss_ground_mse
         loss += LAMBDA_CONTRAST * loss_contrast
 
@@ -401,33 +390,39 @@ for epoch in range(N_EPOCHS):
     sequence_predictor.train()
 
 # [31]
-def plot_training_results(history):
+def plot_training_results(history, run_name="experiment"):
     epochs = range(1, len(history['total']) + 1)
 
     plt.figure(figsize=(12, 5))
 
-    # Plot 1: Basis Loss (Image & Text)
+    # Plot 1: Base losses
     plt.subplot(1, 2, 1)
     plt.plot(epochs, history['image'], label='Image L1 Loss')
     plt.plot(epochs, history['text'], label='Text CrossEntropy')
-    plt.title('Base Model Losses')
+    plt.title(f'Base Model Losses ({run_name})')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
 
-    # Plot 2: Grounding Loss (Experiment 1)
+    # Plot 2: Grounding losses
     plt.subplot(1, 2, 2)
-    plt.plot(epochs, history['ground_mse'], color='orange', label='Grounding MSE')
+
+    if any(v > 0 for v in history['ground_mse']):
+        plt.plot(epochs, history['ground_mse'], label='Grounding MSE')
+
     if any(v > 0 for v in history['contrast']):
-        plt.plot(epochs, history['contrast'], color='green', label='InfoNCE Loss')
-    plt.title('Grounding Module Performance')
+        plt.plot(epochs, history['contrast'], label='InfoNCE Loss')
+
+    plt.title(f'Grounding Module Losses ({run_name})')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig('training_curves_mse2.png') # Save picture for doku
+    plt.savefig(f'training_curves_{run_name}.png', dpi=300, bbox_inches='tight')
     plt.show()
+
+plot_training_results(history, run_name="mse_run")
 
 # Call after training:
 plot_training_results(history)
@@ -476,7 +471,7 @@ def generate_final_heatmap(model, dataloader, device):
         plt.gca().add_patch(plt.Rectangle((i-0.5, i-0.5), 1, 1, fill=False, edgecolor='red', lw=3))
 
     plt.tight_layout()
-    plt.savefig('similarity_heatmap_mse5.png')
+    plt.savefig('similarity_heatmap_mse_correct.png')
     plt.show()
 
 # Call
@@ -484,12 +479,14 @@ generate_final_heatmap(sequence_predictor, val_dataloader, device)
 
 #[33]
 import pandas as pd
+
 # Create a dataframe of the history
 df_infonce = pd.DataFrame(history)
-# Save as csv
-df_infonce.to_csv('history_experiment1_mse2.csv', index=False)
 
-print("Daten erfolgreich als 'history_experiment1_mse2.csv' gespeichert!")
+# Save as csv
+df_infonce.to_csv('history_experiment1_mse_correct.csv', index=False)
+
+print("Daten erfolgreich als 'history_experiment1_mse_correct.csv' gespeichert!")
 
 #[35]
 # Quick Sanity Plot
@@ -524,20 +521,12 @@ for f_idx in range(4):
     frame_boxes = all_boxes[f_idx]
 
     if len(frame_boxes) > 0:
-        # check the values
         coords = frame_boxes[0]
         print(f"Frame {f_idx} Coords: {coords}")
 
-        # if values > 1: (1000 Grid), scale
-        if any(c > 1.1 for c in coords):
-            coords = [c/1000.0 for c in coords]
-
-        # switch v1, v2 to ny1, nx1
-        ny1, nx1, ny2, nx2 = coords
-
-        W, H = img.size
-        # PIL needs (left, top, right, bottom) -> (x1, y1, x2, y2)
-        pixel_bbox = [nx1 * W, ny1 * H, nx2 * W, ny2 * H]
+        # CoT boxes are direct pixel coordinates [x1, y1, x2, y2]
+        x1, y1, x2, y2 = coords
+        pixel_bbox = [x1, y1, x2, y2]
 
         roi = img.crop((pixel_bbox[0], pixel_bbox[1], pixel_bbox[2], pixel_bbox[3]))
         ax[1, f_idx].imshow(roi)
@@ -550,6 +539,100 @@ for f_idx in range(4):
 plt.tight_layout()
 plt.show()
 
+#[37]
+import re
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# --------------------------------------------------
+# Use ONE shared index for both sanity checks
+# --------------------------------------------------
+idx = np.random.randint(0, len(sp_train_dataset))
+print("Selected dataset index:", idx)
+
+# Dataset output: transformed frames and extracted ROIs
+sample = sp_train_dataset[idx]
+
+sequence_tensor = sample[0]      # original context frames after transform
+context_rois = sample[4]         # extracted ROI crops from Dataset
+
+# Original dataset item: raw PIL images and raw CoT text
+item = sp_train_dataset.dataset[idx]
+frames = item["images"]
+cot = item["chain_of_thought"]
+
+
+# --------------------------------------------------
+# Extract raw pixel boxes from CoT by frame
+# --------------------------------------------------
+def extract_raw_boxes_by_frame(cot, K=4):
+    boxes_by_frame = [[] for _ in range(K)]
+
+    image_sections = list(re.finditer(r"##\s*Image\s*(\d+)", cot))
+
+    for i, match in enumerate(image_sections):
+        image_number = int(match.group(1))
+        frame_idx = image_number - 1  # Image 1 -> Frame 0
+
+        if frame_idx < 0 or frame_idx >= K:
+            continue
+
+        start = match.end()
+        end = image_sections[i + 1].start() if i + 1 < len(image_sections) else len(cot)
+        section = cot[start:end]
+
+        raw_boxes = re.findall(r"\b\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\b", section)
+
+        for box in raw_boxes:
+            coords = [int(v.strip()) for v in box.split(",")]
+            boxes_by_frame[frame_idx].append(coords)
+
+    return boxes_by_frame
+
+
+raw_boxes_by_frame = extract_raw_boxes_by_frame(cot, K=4)
+
+for f_idx, boxes in enumerate(raw_boxes_by_frame):
+    print(f"Frame {f_idx}: {boxes[:5]}")
+
+
+# --------------------------------------------------
+# Combined visualization:
+# Row 1: original frames with raw pixel boxes
+# Row 2: ROI crops produced by your Dataset
+# --------------------------------------------------
+fig, ax = plt.subplots(2, 4, figsize=(20, 8))
+
+for f_idx in range(4):
+    img = frames[f_idx]
+    W, H = img.size
+
+    # Row 1: original image + raw CoT boxes
+    ax[0, f_idx].imshow(img)
+    ax[0, f_idx].set_title(f"Original Frame {f_idx} | {W}x{H}")
+    ax[0, f_idx].axis("off")
+
+    for box in raw_boxes_by_frame[f_idx]:
+        x1, y1, x2, y2 = box
+
+        rect = patches.Rectangle(
+            (x1, y1),
+            x2 - x1,
+            y2 - y1,
+            linewidth=2,
+            edgecolor="red",
+            facecolor="none"
+        )
+        ax[0, f_idx].add_patch(rect)
+
+    # Row 2: ROI crop returned by SequencePredictionDataset
+    show_image(ax[1, f_idx], context_rois[f_idx])
+    ax[1, f_idx].set_title(f"Dataset ROI {f_idx}")
+    ax[1, f_idx].axis("off")
+
+plt.tight_layout()
+plt.show()
 
 # ---------------
 # Experiments
