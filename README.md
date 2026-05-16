@@ -58,7 +58,7 @@ roi = crop_and_resize(
 
 Visual sanity checks were used to compare the raw CoT bounding boxes with the extracted dataset ROIs. This confirmed that the corrected coordinate handling produces meaningful local visual crops.
 
-![ROI sanity check](figures/sanity_check_example.png)
+![ROI sanity check](results/figures/sanity_check_example.png)
 
 The top row shows the original frames with raw CoT bounding boxes. The bottom row shows the ROI crops returned by the dataset pipeline.
 
@@ -161,11 +161,11 @@ The purpose of this experiment is to test whether explicit ROI-text alignment im
 
 In the no-alignment run, no additional ROI-text grounding loss is used. This means that the model is trained without explicitly learning that a specific ROI should match the text from the same time step.
 
-![Training curves for no alignment](no_alignment/training_curves_no_alignment.png)
+![Training curves for no alignment](results/no_alignment/training_curves_no_alignment.png)
 
 Since no grounding loss is active in this configuration, the grounding-loss plot is empty. The base losses are still useful as a general training check, but they do not tell us whether ROI-text alignment was learned.
 
-![Similarity heatmap for no alignment](no_alignment/similarity_heatmap_no_alignment.png)
+![Similarity heatmap for no alignment](results/no_alignment/similarity_heatmap_no_alignment.png)
 
 The heatmap does not show a clear diagonal structure. This is expected because the model was not given a direct training signal to align `ROI_t` with `Text_t`.
 
@@ -183,11 +183,11 @@ ROI T3 ↔ Text T3
 ROI T4 ↔ Text T4
 ```
 
-![Training curves for MSE alignment](mse/training_curves_mse.png)
+![Training curves for MSE alignment](results/mse/training_curves_mse.png)
 
 The grounding MSE decreases during training, which shows that the model is able to reduce the numerical distance between ROI embeddings and text embeddings.
 
-![Similarity heatmap for MSE alignment](mse/similarity_heatmap_mse.png)
+![Similarity heatmap for MSE alignment](results/mse/similarity_heatmap_mse.png)
 
 However, the heatmap does not show a consistently clear diagonal. Some text time steps are still similar to several ROI time steps.
 
@@ -200,11 +200,11 @@ The InfoNCE run also uses frame-aware matching, but the training signal is diffe
 
 This means that the model should learn that `ROI T1` belongs more to `Text T1` than to `Text T2`, `Text T3`, or `Text T4`.
 
-![Training curves for InfoNCE alignment](infoNCE/training_curves_infonce.png)
+![Training curves for InfoNCE alignment](results/infoNCE/training_curves_infonce.png)
 
 The InfoNCE loss is more variable than the MSE loss, which is expected because the task is more difficult. The model has to distinguish correct pairs from wrong pairs instead of only reducing a direct distance.
 
-![Similarity heatmap for InfoNCE alignment](infoNCE/similarity_heatmap_infonce.png)
+![Similarity heatmap for InfoNCE alignment](results/infoNCE/similarity_heatmap_infonce.png)
 
 The heatmap is not perfectly diagonal, but it shows the most differentiated structure among the Experiment 1 runs. Compared with no alignment and MSE, the similarities are less collapsed and show more temporal separation.
 
