@@ -2,30 +2,32 @@
 
 ## Project Overview
 
-This project extends a pre-trained multimodal grounded sequence prediction model with a focus on **frame-aware visual grounding**. The main objective is to investigate whether local visual regions extracted from Chain-of-Thought (CoT) bounding boxes can improve the temporal alignment between ROI embeddings and text embeddings.
+This project extends a pre-trained multimodal grounded sequence prediction model with a focus on **frame-aware visual grounding**. The main idea is to test whether local image regions from Chain-of-Thought (CoT) bounding boxes can help the model connect the right visual region with the right text time step.
 
 The project focuses on two defined architectural components:
 
 1. **Grounding Module**  
-   CoT bounding boxes are parsed and converted into frame-specific Region-of-Interest (ROI) patches. These ROI patches are encoded using the visual encoder and used as local visual features.
+The CoT bounding boxes are extracted from the dataset and used to crop frame-specific regions of interest (ROIs). These cropped image regions are then encoded with the visual encoder and added as local visual information.
 
 2. **Alignment / Contrastive Loss**  
-   ROI embeddings are aligned with text embeddings using either MSE regression or contrastive InfoNCE learning. The resulting alignment behavior is evaluated using training curves and heatmaps of ROI-text similarity.
+The ROI embeddings are compared with the text embeddings using either MSE or InfoNCE. I then use training curves and ROI-text similarity heatmaps to check which objective gives a better temporal alignment pattern.
 
 The final experiments compare four configurations:
 
 - **No Alignment:** no explicit ROI-text grounding loss
 - **MSE Frame-Aware Alignment:** ROI at time step `t` is aligned with the text embedding at time step `t` using MSE
-- **InfoNCE Frame-Aare Alignment:** ROI at time step `t` is aligned with the text embedding at time step `t` using contrastive learning
+- **InfoNCE Frame-Ware Alignment:** ROI at time step `t` is aligned with the text embedding at time step `t` using contrastive learning
 - **Global Matching:** ROI is aligned with an averaged global text context instead of the corresponding time step
 
 ## Implementation Summary
+
+The implementation mainly consists of four steps: extracting the CoT boxes, cropping ROIs, passing the ROIs through the visual encoder, and adding ROI-text alignment losses.
 
 ### 1. CoT Bounding Box Parsing
 
 The `daniel3303/StoryReasoning` dataset stores grounding information inside the `chain_of_thought` markdown field. I implemented a custom parser that extracts bounding boxes from the markdown tables for each image frame.
 
-During development, the coordinate format was verified through visual sanity checks. The raw CoT bounding boxes match the original image resolution and are therefore treated as direct pixel coordinates in `[x1, y1, x2, y2]` format.
+At first, the coordinate format was not completely clear. I therefore checked the raw boxes visually on the original frames. These checks showed that the CoT boxes match the original image resolution, so I treat them as direct pixel coordinates in `[x1, y1, x2, y2]` format.
 
 ```python
 box_matches = re.findall(r'\|\s*([\d,]+)\s*\|', section)
@@ -41,7 +43,7 @@ The parsed boxes are stored in a new `parsed_boxes` column using `.map()` so tha
 
 ### 2. ROI Extraction
 
-For each context frame, the first available bounding box is used to extract a local region-of-interest (ROI) crop. The final implementation uses the raw pixel coordinates directly without normalization or scaling by image width and height.
+For each context frame, the first available bounding box is used to extract a local region-of-interest (ROI) crop. The final implementation uses the raw pixel coordinates directly.
 
 ```python
 x1, y1, x2, y2 = frame_boxes[0]
@@ -138,3 +140,128 @@ All experiments were trained for 20 epochs. This was chosen as a practical compr
 This was especially important because implementation issues, such as incorrect bounding box interpretation, could only be reliably identified through visual sanity checks and test runs. Reserving compute for these checks made it possible to correct the ROI extraction pipeline and re-run the final experiments with verified local crops.
 
 In this setup, a 20-epoch run took approximately 45 minutes, allowing multiple configurations to be compared under the same small-scale training conditions. The goal was therefore not to fully optimize each configuration to convergence, but to compare the alignment behaviour of the different grounding objectives in a controlled and reproducible way.
+
+# Results
+
+The results compare how the model behaves with different ROI-text alignment strategies. I use the training curves as a general training overview, but the most important evaluation is the ROI-text similarity heatmap.
+
+In the heatmaps, the rows represent ROI embeddings and the columns represent text embeddings. A strong diagonal would mean that the ROI from time step `t` is most similar to the text from the same time step. This would be the desired behaviour for temporal grounding.
+
+## Experiment 1: No Alignment vs. MSE vs. InfoNCE
+
+Experiment 1 compares three settings:
+
+1. **No Alignment:** no explicit ROI-text grounding loss
+2. **MSE Frame-Aware Alignment:** direct regression between `ROI_t` and `Text_t`
+3. **InfoNCE Frame-Aware Alignment:** contrastive learning between correct and incorrect temporal ROI-text pairs
+
+The purpose of this experiment is to test whether explicit ROI-text alignment improves the temporal structure of the shared embedding space.
+
+### 1.1 No Alignment Baseline
+
+In the no-alignment run, no additional ROI-text grounding loss is used. This means that the model is trained without explicitly learning that a specific ROI should match the text from the same time step.
+
+![Training curves for no alignment](no_alignment/training_curves_no_alignment.png)
+
+Since no grounding loss is active in this configuration, the grounding-loss plot is empty. The base losses are still useful as a general training check, but they do not tell us whether ROI-text alignment was learned.
+
+![Similarity heatmap for no alignment](no_alignment/similarity_heatmap_no_alignment.png)
+
+The heatmap does not show a clear diagonal structure. This is expected because the model was not given a direct training signal to align `ROI_t` with `Text_t`.
+
+**Interpretation:**  
+This run acts as the baseline. It shows that a clear temporal ROI-text alignment does not appear automatically without an explicit grounding objective.
+
+### 1.2 MSE Frame-Aware Alignment
+
+In this run, each ROI embedding is directly aligned with the text embedding from the same time step using MSE. This means that the model is encouraged to make `ROI_t` and `Text_t` more similar.
+
+```text
+ROI T1 ↔ Text T1
+ROI T2 ↔ Text T2
+ROI T3 ↔ Text T3
+ROI T4 ↔ Text T4
+```
+
+![Training curves for MSE alignment](mse/training_curves_mse.png)
+
+The grounding MSE decreases during training, which shows that the model is able to reduce the numerical distance between ROI embeddings and text embeddings.
+
+![Similarity heatmap for MSE alignment](mse/similarity_heatmap_mse.png)
+
+However, the heatmap does not show a consistently clear diagonal. Some text time steps are still similar to several ROI time steps.
+
+**Interpretation:**
+The MSE objective reduces the grounding loss, but this does not automatically mean that the model learned precise temporal alignment. The heatmap suggests that MSE can lead to a simpler or averaged solution, where the embeddings become closer overall but are not clearly separated by time step.
+
+### 1.3 InfoNCE Frame-Aware Alignment
+
+The InfoNCE run also uses frame-aware matching, but the training signal is different from MSE. Instead of only pulling matching ROI-text pairs closer together, InfoNCE also compares them with incorrect temporal pairs.
+
+This means that the model should learn that `ROI T1` belongs more to `Text T1` than to `Text T2`, `Text T3`, or `Text T4`.
+
+![Training curves for InfoNCE alignment](infoNCE/training_curves_infonce.png)
+
+The InfoNCE loss is more variable than the MSE loss, which is expected because the task is more difficult. The model has to distinguish correct pairs from wrong pairs instead of only reducing a direct distance.
+
+![Similarity heatmap for InfoNCE alignment](infoNCE/similarity_heatmap_infonce.png)
+
+The heatmap is not perfectly diagonal, but it shows the most differentiated structure among the Experiment 1 runs. Compared with no alignment and MSE, the similarities are less collapsed and show more temporal separation.
+
+**Interpretation:**  
+InfoNCE gives the strongest indication of temporal discrimination in this experiment. This partially supports the hypothesis that contrastive learning is better suited for frame-aware ROI-text alignment than pure MSE regression. The result is still not perfect, but it is the most meaningful alignment pattern among the tested settings.
+
+## Experiment 1 Summary
+
+| Run | Main Observation | Interpretation |
+| :--- | :--- | :--- |
+| **No Alignment** | No clear diagonal structure | No explicit temporal ROI-text alignment objective is active |
+| **MSE Frame-Aware** | Grounding MSE decreases, but the heatmap suggests shortcut-like patterns | Low regression loss does not necessarily imply temporal discrimination |
+| **InfoNCE Frame-Aware** | Most differentiated heatmap structure | Contrastive learning provides the strongest temporal alignment signal among the tested objectives |
+
+**Key finding:**  
+InfoNCE produced the most useful ROI-text similarity structure in Experiment 1. This partially supports the hypothesis that contrastive learning is better suited for frame-aware ROI-text alignment than MSE. At the same time, the MSE run shows that a low grounding loss alone is not enough to prove temporal grounding. The heatmaps are needed to check whether the model actually learns frame-specific ROI-text correspondence.
+
+## Experiment 2: Frame-Aware vs. Global Matching
+
+Experiment 2 tests whether the exact time step matters for ROI-text alignment.
+
+In frame-aware matching, each ROI is aligned with the text embedding from the same time step:
+
+```text
+ROI_t ↔ Text_t
+```
+
+In global matching, each ROI is aligned with the average text embedding across all context frames:
+
+
+```text
+ROI_t ↔ mean(Text_1, Text_2, Text_3, Text_4)
+```
+
+This experiment checks whether the model benefits from a precise temporal matching signal or whether it can use a more general story-level text representation.
+
+### 2.1 Global Matching
+
+In the global matching run, each ROI is compared with an averaged text context instead of the text from the same time step.
+
+![Training curves for global matching](global_matching/training_curves_global_matching.png)
+
+The grounding MSE becomes low, which is not surprising because the task is easier than frame-aware matching. The model only has to align ROIs with a general text representation of the whole context.
+
+![Similarity heatmap for global matching](global_matching/similarity_heatmap_global_matching.png)
+
+The grounding MSE becomes low, which is not surprising because the task is easier than frame-aware matching. The model only has to align ROIs with a general text representation of the whole context.
+
+**Interpretation:**  
+Global matching can reduce the numerical grounding loss, but this does not mean that the model learned temporal grounding. Instead, the model can rely on the general story context and does not need to learn which ROI belongs to which exact text time step.
+
+## Experiment 2 Summary
+
+| Configuration | Main Observation | Interpretation |
+| :--- | :--- | :--- |
+| **Frame-Aware Matching** | More difficult alignment objective | Preserves the intended time-step-specific ROI-text relation |
+| **Global Matching** | Low numerical grounding error, but no clear diagonal heatmap | Suggests shortcut-like behaviour through averaged text context |
+
+**Key finding:**  
+Frame-aware matching is more suitable for temporal grounding because it keeps the intended `ROI_t ↔ Text_t` relation. Global matching can achieve a low grounding loss, but the heatmap suggests that this can happen through a shortcut using the averaged text context instead of precise temporal alignment.
