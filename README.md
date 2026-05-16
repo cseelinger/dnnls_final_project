@@ -106,3 +106,35 @@ labels = torch.arange(logits.size(0), device=device)
 
 loss_contrast = F.cross_entropy(logits, labels)
 ```
+
+## Experimental Setup
+
+The final experiments were run on the `daniel3303/StoryReasoning` dataset using the corrected ROI extraction pipeline. The CoT bounding boxes were treated as direct pixel coordinates in `[x1, y1, x2, y2]` format, and the resulting ROI crops were passed through the visual encoder.
+
+Each experiment uses the same overall model pipeline and differs only in the ROI-text alignment configuration.
+
+| Run | Configuration | Purpose |
+| :--- | :--- | :--- |
+| **No Alignment** | `LAMBDA_GROUND_MSE = 0`, `LAMBDA_CONTRAST = 0` | Baseline without explicit ROI-text grounding loss |
+| **MSE Frame-Aware Alignment** | `ROI_t <-> Text_t` using MSE | Tests whether direct embedding regression creates temporal ROI-text alignment |
+| **InfoNCE Frame-Aware Alignment** | `ROI_t <-> Text_t` using InfoNCE | Tests whether contrastive learning improves temporal discrimination |
+| **Global Matching** | `ROI_t <-> mean(Text_1...Text_4)` using MSE | Tests whether removing frame awareness leads to shortcut-like behaviour |
+
+The loss curves are used as diagnostic training indicators. Component losses are interpreted cautiously, because the main evidence for temporal grounding behaviour comes from the ROI-text similarity heatmaps.
+
+A strong diagonal in the heatmap would indicate that the ROI embedding from time step `t` is most similar to the text embedding from the same time step:
+
+```text
+ROI T1 <-> Text T1
+ROI T2 <-> Text T2
+ROI T3 <-> Text T3
+ROI T4 <-> Text T4
+```
+
+In contrast, column-wise or non-diagonal patterns suggest weaker temporal discrimination or shortcut-like alignment behaviour.
+
+All experiments were trained for 20 epochs. This was chosen as a practical compromise between training duration, limited free GPU compute in Google Colab, and the need to reserve compute for iterative debugging and validation. In addition to the final controlled runs, several shorter test runs were required to validate the implementation step by step, including the CoT parser, ROI extraction, DataLoader synchronization, model forward pass, and grounding loss integration.
+
+This was especially important because implementation issues, such as incorrect bounding box interpretation, could only be reliably identified through visual sanity checks and test runs. Reserving compute for these checks made it possible to correct the ROI extraction pipeline and re-run the final experiments with verified local crops.
+
+In this setup, a 20-epoch run took approximately 45 minutes, allowing multiple configurations to be compared under the same small-scale training conditions. The goal was therefore not to fully optimize each configuration to convergence, but to compare the alignment behaviour of the different grounding objectives in a controlled and reproducible way.
