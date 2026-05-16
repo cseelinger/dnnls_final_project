@@ -279,3 +279,17 @@ The global matching run showed that removing frame awareness can make the ground
 The main conclusion is therefore:
 
 > InfoNCE is the most promising alignment objective in this setup, because it encourages temporal discrimination between correct and incorrect ROI-text pairs. MSE and global matching can also reduce numerical losses, but the heatmaps show that this does not automatically mean that the model learned precise temporal grounding.
+
+# Limitations
+
+There are several limitations in this project.
+
+1. The CoT bounding boxes are not perfect. Some boxes capture useful local regions, but others cover large parts of the image or do not isolate one specific character or object very precisely. Therefore, the ROI crops should be seen as helpful local visual context, but not as perfect object-level annotations.
+
+2. The experiments were run in a small-scale setup. I used 20 epochs for each final run because of limited free GPU compute in Google Colab and because several test runs were needed to debug and validate the implementation. This means that the models were compared under the same conditions, but not fully optimized to convergence.
+
+3. The loss curves are used mainly as training diagnostics. They show whether the model is training and whether the grounding loss decreases, but they do not fully prove temporal grounding. For this reason, the ROI-text similarity heatmaps are more important for interpreting the alignment behaviour.
+
+4. The heatmaps can show whether the embedding space has a more useful temporal structure, but they do not prove that the model fully understands the story or reliably recognizes identities across frames.
+
+5. The image generation quality remains limited. The generated images tend to be blurry or averaged, so this project focuses more on embedding alignment and temporal ROI-text correspondence than on visual output quality.
