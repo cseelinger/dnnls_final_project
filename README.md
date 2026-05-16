@@ -118,19 +118,19 @@ Each experiment uses the same overall model pipeline and differs only in the ROI
 | Run | Configuration | Purpose |
 | :--- | :--- | :--- |
 | **No Alignment** | `LAMBDA_GROUND_MSE = 0`, `LAMBDA_CONTRAST = 0` | Baseline without explicit ROI-text grounding loss |
-| **MSE Frame-Aware Alignment** | `ROI_t <-> Text_t` using MSE | Tests whether direct embedding regression creates temporal ROI-text alignment |
-| **InfoNCE Frame-Aware Alignment** | `ROI_t <-> Text_t` using InfoNCE | Tests whether contrastive learning improves temporal discrimination |
-| **Global Matching** | `ROI_t <-> mean(Text_1...Text_4)` using MSE | Tests whether removing frame awareness leads to shortcut-like behaviour |
+| **MSE Frame-Aware Alignment** | `ROI_t ↔ Text_t` using MSE | Tests whether direct embedding regression creates temporal ROI-text alignment |
+| **InfoNCE Frame-Aware Alignment** | `ROI_t ↔ Text_t` using InfoNCE | Tests whether contrastive learning improves temporal discrimination |
+| **Global Matching** | `ROI_t ↔ mean(Text_1...Text_4)` using MSE | Tests whether removing frame awareness leads to shortcut-like behaviour |
 
 The loss curves are used as diagnostic training indicators. Component losses are interpreted cautiously, because the main evidence for temporal grounding behaviour comes from the ROI-text similarity heatmaps.
 
 A strong diagonal in the heatmap would indicate that the ROI embedding from time step `t` is most similar to the text embedding from the same time step:
 
 ```text
-ROI T1 <-> Text T1
-ROI T2 <-> Text T2
-ROI T3 <-> Text T3
-ROI T4 <-> Text T4
+ROI T1 ↔ Text T1
+ROI T2 ↔ Text T2
+ROI T3 ↔ Text T3
+ROI T4 ↔ Text T4
 ```
 
 In contrast, column-wise or non-diagonal patterns suggest weaker temporal discrimination or shortcut-like alignment behaviour.
