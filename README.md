@@ -293,3 +293,13 @@ There are several limitations in this project.
 4. The heatmaps can show whether the embedding space has a more useful temporal structure, but they do not prove that the model fully understands the story or reliably recognizes identities across frames.
 
 5. The image generation quality remains limited. The generated images tend to be blurry or averaged, so this project focuses more on embedding alignment and temporal ROI-text correspondence than on visual output quality.
+
+# Conclusion
+
+This project added a frame-aware grounding extension to a multimodal sequence prediction model. CoT bounding boxes were used to extract local ROI crops from the image frames, and these ROIs were encoded as additional local visual features.
+
+The experiments showed that MSE and global matching can reduce the numerical grounding loss, but this does not automatically mean that the model learns precise temporal grounding. The ROI-text similarity heatmaps were therefore important for checking whether the model actually learned a useful time-step-specific structure.
+
+Overall, InfoNCE produced the most useful ROI-text similarity pattern in this setup. It was not perfect, but it gave the strongest indication that contrastive learning can help the model distinguish correct and incorrect ROI-text pairs over time.
+
+The final result is therefore best understood as a partial but meaningful improvement in temporal ROI-text alignment, rather than a complete solution to grounded story understanding.
