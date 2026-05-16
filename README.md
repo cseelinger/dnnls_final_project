@@ -117,10 +117,10 @@ Each experiment uses the same overall model pipeline and differs only in the ROI
 
 | Run | Configuration | Purpose |
 | :--- | :--- | :--- |
-| **No Alignment** | `LAMBDA_GROUND_MSE = 0`, `LAMBDA_CONTRAST = 0` | Baseline without explicit ROI-text grounding loss |
-| **MSE Frame-Aware Alignment** | `ROI_t ↔ Text_t` using MSE | Tests whether direct embedding regression creates temporal ROI-text alignment |
-| **InfoNCE Frame-Aware Alignment** | `ROI_t ↔ Text_t` using InfoNCE | Tests whether contrastive learning improves temporal discrimination |
-| **Global Matching** | `ROI_t ↔ mean(Text_1...Text_4)` using MSE | Tests whether removing frame awareness leads to shortcut-like behaviour |
+| **No Alignment** | `USE_GLOBAL_MATCHING = False`, `USE_CONTRASTIVE_ROI = False`, `LAMBDA_GROUND_MSE = 0`, `LAMBDA_CONTRAST = 0` | Baseline without explicit ROI-text grounding loss |
+| **MSE Frame-Aware Alignment** | `USE_GLOBAL_MATCHING = False`, `USE_CONTRASTIVE_ROI = False`, `LAMBDA_GROUND_MSE = 0.1`, `LAMBDA_CONTRAST = 0`, `ROI_t ↔ Text_t` using MSE | Tests whether direct embedding regression creates temporal ROI-text alignment |
+| **InfoNCE Frame-Aware Alignment** | `USE_GLOBAL_MATCHING = False`, `USE_CONTRASTIVE_ROI = True`, `LAMBDA_GROUND_MSE = 0`, `LAMBDA_CONTRAST = 0.1`, `ROI_t ↔ Text_t` using InfoNCE | Tests whether contrastive learning improves temporal discrimination |
+| **Global Matching** | `USE_GLOBAL_MATCHING = True`, `USE_CONTRASTIVE_ROI = False`, `LAMBDA_GROUND_MSE = 0.1`, `LAMBDA_CONTRAST = 0`, `ROI_t ↔ mean(Text_1...Text_4)` using MSE | Tests whether removing frame awareness leads to shortcut-like behaviour |
 
 The loss curves are used as diagnostic training indicators. Component losses are interpreted cautiously, because the main evidence for temporal grounding behaviour comes from the ROI-text similarity heatmaps.
 
@@ -265,3 +265,17 @@ Global matching can reduce the numerical grounding loss, but this does not mean 
 
 **Key finding:**  
 Frame-aware matching is more suitable for temporal grounding because it keeps the intended `ROI_t ↔ Text_t` relation. Global matching can achieve a low grounding loss, but the heatmap suggests that this can happen through a shortcut using the averaged text context instead of precise temporal alignment.
+
+# Overall Findings
+
+Overall, the experiments show that adding ROI-based grounding changes the way the model connects visual regions and text embeddings. However, the results also show that a low grounding loss alone is not enough to prove good temporal grounding.
+
+The no-alignment run showed that clear ROI-text alignment does not appear automatically without an explicit grounding objective. The MSE run reduced the numerical grounding loss, but the heatmap did not show a consistently clear temporal alignment pattern. This suggests that MSE can make embeddings closer overall without clearly separating the different time steps.
+
+The InfoNCE run produced the most useful ROI-text similarity structure in this project. It was not perfectly diagonal, but it showed the strongest indication that the model learned to distinguish correct and incorrect temporal ROI-text pairs.
+
+The global matching run showed that removing frame awareness can make the grounding objective easier, but this does not necessarily lead to better temporal grounding. Even if the numerical grounding loss becomes low, the model can rely on an averaged story context instead of learning the exact `ROI_t ↔ Text_t` relation.
+
+The main conclusion is therefore:
+
+> InfoNCE is the most promising alignment objective in this setup, because it encourages temporal discrimination between correct and incorrect ROI-text pairs. MSE and global matching can also reduce numerical losses, but the heatmaps show that this does not automatically mean that the model learned precise temporal grounding.
