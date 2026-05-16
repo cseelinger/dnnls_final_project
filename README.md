@@ -245,11 +245,11 @@ This experiment checks whether the model benefits from a precise temporal matchi
 
 In the global matching run, each ROI is compared with an averaged text context instead of the text from the same time step.
 
-![Training curves for global matching](global_matching/training_curves_global_matching.png)
+![Training curves for global matching](results/global_matching/training_curves_global_matching.png)
 
 The grounding MSE becomes low, which is not surprising because the task is easier than frame-aware matching. The model only has to align ROIs with a general text representation of the whole context.
 
-![Similarity heatmap for global matching](global_matching/similarity_heatmap_global_matching.png)
+![Similarity heatmap for global matching](results/global_matching/similarity_heatmap_global_matching.png)
 
 The grounding MSE becomes low, which is not surprising because the task is easier than frame-aware matching. The model only has to align ROIs with a general text representation of the whole context.
 
