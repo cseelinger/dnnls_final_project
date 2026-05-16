@@ -141,13 +141,13 @@ This was especially important because implementation issues, such as incorrect b
 
 In this setup, a 20-epoch run took approximately 45 minutes, allowing multiple configurations to be compared under the same small-scale training conditions. The goal was therefore not to fully optimize each configuration to convergence, but to compare the alignment behaviour of the different grounding objectives in a controlled and reproducible way.
 
-# Results
+## Results
 
 The results compare how the model behaves with different ROI-text alignment strategies. I use the training curves as a general training overview, but the most important evaluation is the ROI-text similarity heatmap.
 
 In the heatmaps, the rows represent ROI embeddings and the columns represent text embeddings. A strong diagonal would mean that the ROI from time step `t` is most similar to the text from the same time step. This would be the desired behaviour for temporal grounding.
 
-## Experiment 1: No Alignment vs. MSE vs. InfoNCE
+### Experiment 1: No Alignment vs. MSE vs. InfoNCE
 
 Experiment 1 compares three settings:
 
@@ -157,7 +157,7 @@ Experiment 1 compares three settings:
 
 The purpose of this experiment is to test whether explicit ROI-text alignment improves the temporal structure of the shared embedding space.
 
-### 1.1 No Alignment Baseline
+#### 1.1 No Alignment Baseline
 
 In the no-alignment run, no additional ROI-text grounding loss is used. This means that the model is trained without explicitly learning that a specific ROI should match the text from the same time step.
 
@@ -172,7 +172,7 @@ The heatmap does not show a clear diagonal structure. This is expected because t
 **Interpretation:**  
 This run acts as the baseline. It shows that a clear temporal ROI-text alignment does not appear automatically without an explicit grounding objective.
 
-### 1.2 MSE Frame-Aware Alignment
+#### 1.2 MSE Frame-Aware Alignment
 
 In this run, each ROI embedding is directly aligned with the text embedding from the same time step using MSE. This means that the model is encouraged to make `ROI_t` and `Text_t` more similar.
 
@@ -194,7 +194,7 @@ However, the heatmap does not show a consistently clear diagonal. Some text time
 **Interpretation:**
 The MSE objective reduces the grounding loss, but this does not automatically mean that the model learned precise temporal alignment. The heatmap suggests that MSE can lead to a simpler or averaged solution, where the embeddings become closer overall but are not clearly separated by time step.
 
-### 1.3 InfoNCE Frame-Aware Alignment
+#### 1.3 InfoNCE Frame-Aware Alignment
 
 The InfoNCE run also uses frame-aware matching, but the training signal is different from MSE. Instead of only pulling matching ROI-text pairs closer together, InfoNCE also compares them with incorrect temporal pairs.
 
@@ -211,7 +211,7 @@ The heatmap is not perfectly diagonal, but it shows the most differentiated stru
 **Interpretation:**  
 InfoNCE gives the strongest indication of temporal discrimination in this experiment. This partially supports the hypothesis that contrastive learning is better suited for frame-aware ROI-text alignment than pure MSE regression. The result is still not perfect, but it is the most meaningful alignment pattern among the tested settings.
 
-## Experiment 1 Summary
+#### 1.4 Summary
 
 | Run | Main Observation | Interpretation |
 | :--- | :--- | :--- |
@@ -222,7 +222,7 @@ InfoNCE gives the strongest indication of temporal discrimination in this experi
 **Key finding:**  
 InfoNCE produced the most useful ROI-text similarity structure in Experiment 1. This partially supports the hypothesis that contrastive learning is better suited for frame-aware ROI-text alignment than MSE. At the same time, the MSE run shows that a low grounding loss alone is not enough to prove temporal grounding. The heatmaps are needed to check whether the model actually learns frame-specific ROI-text correspondence.
 
-## Experiment 2: Frame-Aware vs. Global Matching
+### Experiment 2: Frame-Aware vs. Global Matching
 
 Experiment 2 tests whether the exact time step matters for ROI-text alignment.
 
@@ -241,7 +241,7 @@ ROI_t ↔ mean(Text_1, Text_2, Text_3, Text_4)
 
 This experiment checks whether the model benefits from a precise temporal matching signal or whether it can use a more general story-level text representation.
 
-### 2.1 Global Matching
+#### 2.1 Global Matching
 
 In the global matching run, each ROI is compared with an averaged text context instead of the text from the same time step.
 
@@ -256,7 +256,7 @@ The grounding MSE becomes low, which is not surprising because the task is easie
 **Interpretation:**  
 Global matching can reduce the numerical grounding loss, but this does not mean that the model learned temporal grounding. Instead, the model can rely on the general story context and does not need to learn which ROI belongs to which exact text time step.
 
-## Experiment 2 Summary
+#### 2.2 Summary
 
 | Configuration | Main Observation | Interpretation |
 | :--- | :--- | :--- |
@@ -266,7 +266,7 @@ Global matching can reduce the numerical grounding loss, but this does not mean 
 **Key finding:**  
 Frame-aware matching is more suitable for temporal grounding because it keeps the intended `ROI_t ↔ Text_t` relation. Global matching can achieve a low grounding loss, but the heatmap suggests that this can happen through a shortcut using the averaged text context instead of precise temporal alignment.
 
-# Overall Findings
+## Overall Findings
 
 Overall, the experiments show that adding ROI-based grounding changes the way the model connects visual regions and text embeddings. However, the results also show that a low grounding loss alone is not enough to prove good temporal grounding.
 
@@ -280,7 +280,7 @@ The main conclusion is therefore:
 
 > InfoNCE is the most promising alignment objective in this setup, because it encourages temporal discrimination between correct and incorrect ROI-text pairs. MSE and global matching can also reduce numerical losses, but the heatmaps show that this does not automatically mean that the model learned precise temporal grounding.
 
-# Limitations
+## Limitations
 
 There are several limitations in this project.
 
@@ -294,7 +294,7 @@ There are several limitations in this project.
 
 5. The image generation quality remains limited. The generated images tend to be blurry or averaged, so this project focuses more on embedding alignment and temporal ROI-text correspondence than on visual output quality.
 
-# Conclusion
+## Conclusion
 
 This project added a frame-aware grounding extension to a multimodal sequence prediction model. CoT bounding boxes were used to extract local ROI crops from the image frames, and these ROIs were encoded as additional local visual features.
 
@@ -303,3 +303,11 @@ The experiments showed that MSE and global matching can reduce the numerical gro
 Overall, InfoNCE produced the most useful ROI-text similarity pattern in this setup. It was not perfect, but it gave the strongest indication that contrastive learning can help the model distinguish correct and incorrect ROI-text pairs over time.
 
 The final result is therefore best understood as a partial but meaningful improvement in temporal ROI-text alignment, rather than a complete solution to grounded story understanding.
+
+## AI Transparency Statement
+
+AI has been directed for enhanced development of concepts and outputs.
+
+| AITS | Descriptor | Transparency Statement | AI Contributions | Human Contribution |
+| :--- | :--- | :--- | :--- | :--- |
+| 3 | AI for Developing | AI has been directed for enhanced development of concepts and outputs. | AI is used to undertake detailed development of many or most aspects of an activity and outputs of that activity. | The human takes a significant role in the enhancement, refinement, and critical review of AI generated elements, combining or curating for any outputs. |
