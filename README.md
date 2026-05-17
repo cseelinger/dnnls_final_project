@@ -280,6 +280,20 @@ The main conclusion is therefore:
 
 > InfoNCE is the most promising alignment objective in this setup, because it encourages temporal discrimination between correct and incorrect ROI-text pairs. MSE and global matching can also reduce numerical losses, but the heatmaps show that this does not automatically mean that the model learned precise temporal grounding.
 
+## Implementation Challenges & Adjustments
+
+During implementation, I made a few adjustments compared with the initial pre-registration. These adjustments were made to keep the final experiments controlled, comparable, and easier to interpret.
+
+1. The main implementation challenge was the CoT bounding box format. I first had to validate how the raw box values should be interpreted. I used visual sanity checks to compare the raw boxes on the original frames with the ROI crops returned by the dataset pipeline. Based on this, I treated the boxes as direct pixel coordinates in `[x1, y1, x2, y2]` format.
+
+2. Another challenge was keeping the new ROI pipeline compatible with the existing baseline model and DataLoader structure. The dataset, model forward pass, and training loop had to be extended without breaking the original sequence prediction pipeline.
+
+3. A practical limitation was the available GPU time in Google Colab. Since several test runs were needed to debug the ROI extraction, tensor shapes, and loss integration, I kept the final experiments small and controlled. This made it more important to compare a few clear configurations under the same conditions instead of adding more training stages or extra components.
+
+4. I did not implement the separate ROI-text warm-up as an independent training phase. Instead, the grounding losses were integrated directly into the end-to-end training loop. This kept the comparison closer to the provided baseline pipeline and avoided introducing an additional training variable.
+
+5. ReID/entity pooling was also left out of the final experiments. It was treated as an optional extension, but adding an additional entity-consistency loss would have made it harder to tell whether the observed differences came from MSE, InfoNCE, global matching, or the extra ReID component.
+
 ## Limitations
 
 There are several limitations in this project.
